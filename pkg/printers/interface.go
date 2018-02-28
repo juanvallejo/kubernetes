@@ -19,6 +19,9 @@ package printers
 import (
 	"fmt"
 	"io"
+	"strings"
+
+	"github.com/spf13/cobra"
 
 	"k8s.io/apimachinery/pkg/runtime"
 )
@@ -58,8 +61,7 @@ func (fn ResourcePrinterFunc) IsGeneric() bool {
 
 type PrintOptions struct {
 	// supported Format types can be found in pkg/printers/printers.go
-	OutputFormatType     string
-	OutputFormatArgument string
+	OutputFormatType string
 
 	NoHeaders          bool
 	WithNamespace      bool
@@ -72,9 +74,97 @@ type PrintOptions struct {
 	ColumnLabels       []string
 
 	SortBy string
+}
 
-	// indicates if it is OK to ignore missing keys for rendering an output template.
-	AllowMissingKeys bool
+// separate template flags
+type TemplatePrintFlags struct {
+	// indicates if it is OK to ignore missing keys for rendering
+	// an output template.
+	AllowMissingKeys *bool
+	TemplateArgument *string
+
+	// not actually bound to a flag - this may be set by
+	// a more general flags struct that composes this one,
+	// or its value may be provided via an arg to ToPrinter.
+	// We need this to select the appropriate PrintBuilder.
+	OutputFormat string
+
+	PrinterBuilders []func(*TemplatePrintFlags) (ResourcePrinter, bool, error)
+}
+
+func (f *TemplatePrintFlags) Validate() error {
+	if f.TemplateArgument == nil || len(*f.TemplateArgument) == 0 {
+		return fmt.Errorf("missing --template value")
+	}
+	return nil
+}
+
+func (f *TemplatePrintFlags) ToPrinter(outputFormat string) (ResourcePrinter, error) {
+	f.OutputFormat = outputFormat
+
+	// templates are logically optional for specifying a format.
+	if len(f.OutputFormat) == 0 && f.TemplateArgument != nil && len(*f.TemplateArgument) != 0 {
+		f.OutputFormat = "template"
+	}
+
+	templateFormats := []string{
+		"go-template=", "go-template-file=", "jsonpath=", "jsonpath-file=", "custom-columns=", "custom-columns-file=",
+	}
+
+	for _, format := range templateFormats {
+		if strings.HasPrefix(f.OutputFormat, format) {
+			templateFile := outputFormat[len(format):]
+			f.TemplateArgument = &templateFile
+			f.OutputFormat = format[:len(format)-1]
+			break
+		}
+	}
+
+	// iterate through all o.PrinterBuilders here.
+	// On the first PrinterBuilder that matches, use the
+	// ResourcePrinter that it returns.
+	for _, builder := range f.PrinterBuilders {
+		p, match, err := builder(f)
+		if !match {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+
+		return p, nil
+	}
+
+	return nil, fmt.Errorf("no printers matched current flag values")
+}
+
+// AddFlags receives a *cobra.Command reference and binds
+// flags related to template printing to it
+func (f *TemplatePrintFlags) AddFlags(c *cobra.Command) {
+	if f.TemplateArgument != nil {
+		c.Flags().StringVar(f.TemplateArgument, "template", *f.TemplateArgument, "Template string or path to template file to use when -o=go-template, -o=go-template-file. The template format is golang templates [http://golang.org/pkg/text/template/#pkg-overview].")
+		c.MarkFlagFilename("template")
+	}
+	if f.AllowMissingKeys != nil {
+		c.Flags().BoolVar(f.AllowMissingKeys, "allow-missing-template-keys", *f.AllowMissingKeys, "If true, ignore any errors in templates when a field or map key is missing in the template. Only applies to golang and jsonpath output formats.")
+	}
+}
+
+// NewTemplatePrintFlags returns flags associated with
+// --template printing, with default values set.
+func NewTemplatePrintFlags() *TemplatePrintFlags {
+	allowMissingKeysPtr := true
+	templateArgPtr := ""
+
+	return &TemplatePrintFlags{
+		TemplateArgument: &templateArgPtr,
+		AllowMissingKeys: &allowMissingKeysPtr,
+
+		PrinterBuilders: []func(*TemplatePrintFlags) (ResourcePrinter, bool, error){
+			NewTemplatePrinter,
+			NewJSONPathPrinter,
+		},
+	}
 }
 
 // Describer generates output for the named resource or an error

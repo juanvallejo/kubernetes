@@ -22,6 +22,8 @@ import (
 	"io"
 	"text/template"
 
+	"k8s.io/kubernetes/bazel-kubernetes/external/go_sdk/src/io/ioutil"
+
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
@@ -31,26 +33,53 @@ type TemplatePrinter struct {
 	template    *template.Template
 }
 
-func NewTemplatePrinter(tmpl []byte) (*TemplatePrinter, error) {
+// NewTemplatePrinter is a PrintBuilder func that returns
+// a ResourcePrinter or nil based on given flag values
+func NewTemplatePrinter(flags *TemplatePrintFlags) (ResourcePrinter, bool, error) {
+	compatibleValues := []string{
+		"templatefile",
+		"go-template-file",
+		"template",
+		"go-template",
+	}
+
+	isCompatible := false
+	for _, v := range compatibleValues {
+		if flags.OutputFormat == v {
+			isCompatible = true
+			break
+		}
+	}
+
+	if !isCompatible {
+		return nil, false, nil
+	}
+
+	fmtArg := *flags.TemplateArgument
+	if flags.OutputFormat == "templatefile" || flags.OutputFormat == "go-template-file" {
+		data, err := ioutil.ReadFile(fmtArg)
+		if err != nil {
+			return nil, true, err
+		}
+		fmtArg = string(data)
+	}
+
 	t, err := template.New("output").
 		Funcs(template.FuncMap{"exists": exists}).
-		Parse(string(tmpl))
+		Parse(fmtArg)
 	if err != nil {
-		return nil, err
+		return nil, true, err
 	}
-	return &TemplatePrinter{
-		rawTemplate: string(tmpl),
-		template:    t,
-	}, nil
-}
 
-// AllowMissingKeys tells the template engine if missing keys are allowed.
-func (p *TemplatePrinter) AllowMissingKeys(allow bool) {
-	if allow {
-		p.template.Option("missingkey=default")
-	} else {
-		p.template.Option("missingkey=error")
+	t.Option("missingkey=error")
+	if flags.AllowMissingKeys != nil && *flags.AllowMissingKeys {
+		t.Option("missingkey=default")
 	}
+
+	return &TemplatePrinter{
+		rawTemplate: fmtArg,
+		template:    t,
+	}, true, nil
 }
 
 func (p *TemplatePrinter) AfterPrint(w io.Writer, res string) error {
