@@ -18,7 +18,6 @@ package printers
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 
 	"k8s.io/apimachinery/pkg/runtime"
@@ -29,7 +28,7 @@ import (
 // send arguments to PrintObj in the version you wish them to be shown using a
 // VersionedPrinter (typically when generic is true).
 func GetStandardPrinter(typer runtime.ObjectTyper, encoder runtime.Encoder, decoders []runtime.Decoder, options PrintOptions) (ResourcePrinter, error) {
-	format, formatArgument, allowMissingTemplateKeys := options.OutputFormatType, options.OutputFormatArgument, options.AllowMissingKeys
+	format := options.OutputFormatType
 
 	var printer ResourcePrinter
 	switch format {
@@ -45,58 +44,6 @@ func GetStandardPrinter(typer runtime.ObjectTyper, encoder runtime.Encoder, deco
 			Typer:    typer,
 			Decoders: decoders,
 		}
-
-	case "template", "go-template":
-		if len(formatArgument) == 0 {
-			return nil, fmt.Errorf("template format specified but no template given")
-		}
-		templatePrinter, err := NewTemplatePrinter([]byte(formatArgument))
-		if err != nil {
-			return nil, fmt.Errorf("error parsing template %s, %v\n", formatArgument, err)
-		}
-		templatePrinter.AllowMissingKeys(allowMissingTemplateKeys)
-		printer = templatePrinter
-
-	case "templatefile", "go-template-file":
-		if len(formatArgument) == 0 {
-			return nil, fmt.Errorf("templatefile format specified but no template file given")
-		}
-		data, err := ioutil.ReadFile(formatArgument)
-		if err != nil {
-			return nil, fmt.Errorf("error reading template %s, %v\n", formatArgument, err)
-		}
-		templatePrinter, err := NewTemplatePrinter(data)
-		if err != nil {
-			return nil, fmt.Errorf("error parsing template %s, %v\n", string(data), err)
-		}
-		templatePrinter.AllowMissingKeys(allowMissingTemplateKeys)
-		printer = templatePrinter
-
-	case "jsonpath":
-		if len(formatArgument) == 0 {
-			return nil, fmt.Errorf("jsonpath template format specified but no template given")
-		}
-		jsonpathPrinter, err := NewJSONPathPrinter(formatArgument)
-		if err != nil {
-			return nil, fmt.Errorf("error parsing jsonpath %s, %v\n", formatArgument, err)
-		}
-		jsonpathPrinter.AllowMissingKeys(allowMissingTemplateKeys)
-		printer = jsonpathPrinter
-
-	case "jsonpath-file":
-		if len(formatArgument) == 0 {
-			return nil, fmt.Errorf("jsonpath file format specified but no template file given")
-		}
-		data, err := ioutil.ReadFile(formatArgument)
-		if err != nil {
-			return nil, fmt.Errorf("error reading template %s, %v\n", formatArgument, err)
-		}
-		jsonpathPrinter, err := NewJSONPathPrinter(string(data))
-		if err != nil {
-			return nil, fmt.Errorf("error parsing template %s, %v\n", string(data), err)
-		}
-		jsonpathPrinter.AllowMissingKeys(allowMissingTemplateKeys)
-		printer = jsonpathPrinter
 
 	case "custom-columns":
 		var err error

@@ -49,8 +49,6 @@ func AddNonDeprecatedPrinterFlags(cmd *cobra.Command) {
 	AddOutputFlags(cmd)
 	AddNoHeadersFlags(cmd)
 	cmd.Flags().Bool("show-labels", false, "When printing, show all labels as the last column (default hide labels column)")
-	cmd.Flags().String("template", "", "Template string or path to template file to use when -o=go-template, -o=go-template-file. The template format is golang templates [http://golang.org/pkg/text/template/#pkg-overview].")
-	cmd.MarkFlagFilename("template")
 	cmd.Flags().String("sort-by", "", "If non-empty, sort list types using this field specification.  The field specification is expressed as a JSONPath expression (e.g. '{.metadata.name}'). The field in the API resource specified by this JSONPath expression must be an integer or a string.")
 	cmd.Flags().BoolP("show-all", "a", true, "When printing, show all resources (default hide terminated pods.)")
 	cmd.Flags().MarkDeprecated("show-all", "will be removed in an upcoming release")
@@ -69,7 +67,6 @@ func AddOutputVarFlagsForMutation(cmd *cobra.Command, output *string) {
 // AddOutputFlags adds output related flags to a command.
 func AddOutputFlags(cmd *cobra.Command) {
 	cmd.Flags().StringP("output", "o", "", "Output format. One of: json|yaml|wide|name|custom-columns=...|custom-columns-file=...|go-template=...|go-template-file=...|jsonpath=...|jsonpath-file=... See custom columns [http://kubernetes.io/docs/user-guide/kubectl-overview/#custom-columns], golang template [http://golang.org/pkg/text/template/#pkg-overview] and jsonpath template [http://kubernetes.io/docs/user-guide/jsonpath].")
-	cmd.Flags().Bool("allow-missing-template-keys", true, "If true, ignore any errors in templates when a field or map key is missing in the template. Only applies to golang and jsonpath output formats.")
 }
 
 // AddNoHeadersFlags adds no-headers flags to a command.
@@ -176,51 +173,15 @@ func ExtractCmdPrintOptions(cmd *cobra.Command, withNamespace bool) *printers.Pr
 		Wide:               GetWideFlag(cmd),
 		ShowAll:            GetFlagBool(cmd, "show-all"),
 		ShowLabels:         GetFlagBool(cmd, "show-labels"),
+		OutputFormatType:   GetFlagString(cmd, "output"),
 		AbsoluteTimestamps: isWatch(cmd),
 		ColumnLabels:       columnLabel,
 		WithNamespace:      withNamespace,
 	}
 
-	var outputFormat string
-	if flags.Lookup("output") != nil {
-		outputFormat = GetFlagString(cmd, "output")
-	}
-
 	if flags.Lookup("sort-by") != nil {
 		options.SortBy = GetFlagString(cmd, "sort-by")
 	}
-
-	// templates are logically optional for specifying a format.
-	// TODO once https://github.com/kubernetes/kubernetes/issues/12668 is fixed, this should fall back to GetFlagString
-	var templateFile string
-	if flag := flags.Lookup("template"); flag != nil {
-		if flag.Value.Type() == "string" {
-			templateFile = GetFlagString(cmd, "template")
-		}
-	}
-	if len(outputFormat) == 0 && len(templateFile) != 0 {
-		outputFormat = "template"
-	}
-
-	templateFormats := []string{
-		"go-template=", "go-template-file=", "jsonpath=", "jsonpath-file=", "custom-columns=", "custom-columns-file=",
-	}
-	for _, format := range templateFormats {
-		if strings.HasPrefix(outputFormat, format) {
-			templateFile = outputFormat[len(format):]
-			outputFormat = format[:len(format)-1]
-		}
-	}
-
-	// this function may be invoked by a command that did not call AddPrinterFlags first, so we need
-	// to be safe about how we access the allow-missing-template-keys flag
-	if flags.Lookup("allow-missing-template-keys") != nil {
-		options.AllowMissingKeys = GetFlagBool(cmd, "allow-missing-template-keys")
-	}
-
-	options.OutputFormatType = outputFormat
-	options.OutputFormatArgument = templateFile
-
 	return options
 }
 

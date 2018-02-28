@@ -22,6 +22,8 @@ import (
 	"io"
 	"reflect"
 
+	"k8s.io/kubernetes/bazel-kubernetes/external/go_sdk/src/io/ioutil"
+
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/util/jsonpath"
@@ -102,12 +104,29 @@ type JSONPathPrinter struct {
 	*jsonpath.JSONPath
 }
 
-func NewJSONPathPrinter(tmpl string) (*JSONPathPrinter, error) {
-	j := jsonpath.New("out")
-	if err := j.Parse(tmpl); err != nil {
-		return nil, err
+// NewJSONPathPrinter is a PrintBuilder func that returns
+// a ResourcePrinter or nil based on given flag values
+func NewJSONPathPrinter(flags *TemplatePrintFlags) (ResourcePrinter, bool, error) {
+	if flags.OutputFormat != "jsonpath" && flags.OutputFormat != "jsonpath-file" {
+		return nil, false, nil
 	}
-	return &JSONPathPrinter{tmpl, j}, nil
+
+	fmtArg := *flags.TemplateArgument
+	if flags.OutputFormat == "jsonpath-file" {
+		data, err := ioutil.ReadFile(fmtArg)
+		if err != nil {
+			return nil, true, err
+		}
+		fmtArg = string(data)
+	}
+
+	j := jsonpath.New("out")
+	if err := j.Parse(fmtArg); err != nil {
+		return nil, true, err
+	}
+
+	j.AllowMissingKeys(flags.AllowMissingKeys != nil && *flags.AllowMissingKeys)
+	return &JSONPathPrinter{fmtArg, j}, true, nil
 }
 
 func (j *JSONPathPrinter) AfterPrint(w io.Writer, res string) error {
