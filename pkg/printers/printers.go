@@ -47,14 +47,23 @@ func GetStandardPrinter(typer runtime.ObjectTyper, encoder runtime.Encoder, deco
 		}
 
 	case "template", "go-template":
-		if len(formatArgument) == 0 {
-			return nil, fmt.Errorf("template format specified but no template given")
+		// build flags for obtaining a template printer
+		templateFlags := NewTemplatePrintFlags()
+		templateFlags.AllowMissingKeys = &allowMissingTemplateKeys
+		templateFlags.TemplateArgument = &formatArgument
+
+		if err := templateFlags.Validate(); err != nil {
+			return nil, err
 		}
-		templatePrinter, err := NewTemplatePrinter([]byte(formatArgument))
+
+		templatePrinter, matched, err := templateFlags.ToPrinter(format)
+		if !matched {
+			return nil, fmt.Errorf("unable to match a template printer to handle current print options")
+		}
 		if err != nil {
-			return nil, fmt.Errorf("error parsing template %s, %v\n", formatArgument, err)
+			return nil, err
 		}
-		templatePrinter.AllowMissingKeys(allowMissingTemplateKeys)
+
 		printer = templatePrinter
 
 	case "templatefile", "go-template-file":
