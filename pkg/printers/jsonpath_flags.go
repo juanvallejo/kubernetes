@@ -23,10 +23,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// GoTemplatePrintFlags provides default flags necessary for template printing.
+// JSONPathPrintFlags provides default flags necessary for template printing.
 // Given the following flag values, a printer can be requested that knows
 // how to handle printing based on these values.
-type GoTemplatePrintFlags struct {
+type JSONPathPrintFlags struct {
 	// indicates if it is OK to ignore missing keys for rendering
 	// an output template.
 	AllowMissingKeys *bool
@@ -36,24 +36,25 @@ type GoTemplatePrintFlags struct {
 // ToPrinter receives an outputFormat and returns a printer capable of
 // handling --template format printing.
 // Returns false if the specified outputFormat does not match a template format.
-func (f *GoTemplatePrintFlags) ToPrinter(outputFormat string) (ResourcePrinter, bool, error) {
+func (f *JSONPathPrintFlags) ToPrinter(outputFormat string) (ResourcePrinter, bool, error) {
 	if f.TemplateArgument == nil || len(*f.TemplateArgument) == 0 {
-		return nil, false, fmt.Errorf("missing --template argument")
+		return nil, false, fmt.Errorf("missing --template value")
 	}
 
+	if f.TemplateArgument == nil {
+		return nil, true, fmt.Errorf("missing --template argument")
+	}
 	templateArg := *f.TemplateArgument
 
 	// templates are logically optional for specifying a format.
 	// this allows a user to specify a template format value
-	// as --output=go-template=
-	supportedFormats := map[string]bool{
-		"template":         true,
-		"go-template":      true,
-		"go-template-file": true,
-		"templatefile":     true,
+	// as --output=jsonpath=
+	templateFormats := map[string]bool{
+		"jsonpath":      true,
+		"jsonpath-file": true,
 	}
 
-	for format := range supportedFormats {
+	for format := range templateFormats {
 		f := format + "="
 		if strings.HasPrefix(outputFormat, f) {
 			templateArg = outputFormat[len(f):]
@@ -61,11 +62,11 @@ func (f *GoTemplatePrintFlags) ToPrinter(outputFormat string) (ResourcePrinter, 
 		}
 	}
 
-	if _, supportedFormat := supportedFormats[outputFormat]; !supportedFormat {
+	if _, supportedFormat := templateFormats[outputFormat]; !supportedFormat {
 		return nil, false, nil
 	}
 
-	p, err := NewGoTemplatePrinter([]byte(templateArg))
+	p, err := NewJSONPathPrinter(templateArg)
 	if err != nil {
 		return nil, true, err
 	}
@@ -81,9 +82,9 @@ func (f *GoTemplatePrintFlags) ToPrinter(outputFormat string) (ResourcePrinter, 
 
 // AddFlags receives a *cobra.Command reference and binds
 // flags related to template printing to it
-func (f *GoTemplatePrintFlags) AddFlags(c *cobra.Command) {
+func (f *JSONPathPrintFlags) AddFlags(c *cobra.Command) {
 	if f.TemplateArgument != nil {
-		c.Flags().StringVar(f.TemplateArgument, "template", *f.TemplateArgument, "Template string or path to template file to use when -o=go-template, -o=go-template-file. The template format is golang templates [http://golang.org/pkg/text/template/#pkg-overview].")
+		c.Flags().StringVar(f.TemplateArgument, "template", *f.TemplateArgument, "Template string or path to template file to use when --output=jsonpath, --output=jsonpath-file.")
 		c.MarkFlagFilename("template")
 	}
 	if f.AllowMissingKeys != nil {
@@ -91,13 +92,13 @@ func (f *GoTemplatePrintFlags) AddFlags(c *cobra.Command) {
 	}
 }
 
-// NewGoTemplatePrintFlags returns flags associated with
+// NewJSONPathPrintFlags returns flags associated with
 // --template printing, with default values set.
-func NewGoTemplatePrintFlags() *GoTemplatePrintFlags {
+func NewJSONPathPrintFlags() *JSONPathPrintFlags {
 	allowMissingKeysPtr := true
 	templateArgPtr := ""
 
-	return &GoTemplatePrintFlags{
+	return &JSONPathPrintFlags{
 		TemplateArgument: &templateArgPtr,
 		AllowMissingKeys: &allowMissingKeysPtr,
 	}
