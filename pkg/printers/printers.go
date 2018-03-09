@@ -46,57 +46,40 @@ func GetStandardPrinter(typer runtime.ObjectTyper, encoder runtime.Encoder, deco
 			Decoders: decoders,
 		}
 
-	case "template", "go-template":
+	case "templatefile", "go-template-file", "jsonpath-file":
 		if len(formatArgument) == 0 {
-			return nil, fmt.Errorf("template format specified but no template given")
-		}
-		templatePrinter, err := NewTemplatePrinter([]byte(formatArgument))
-		if err != nil {
-			return nil, fmt.Errorf("error parsing template %s, %v\n", formatArgument, err)
-		}
-		templatePrinter.AllowMissingKeys(allowMissingTemplateKeys)
-		printer = templatePrinter
-
-	case "templatefile", "go-template-file":
-		if len(formatArgument) == 0 {
-			return nil, fmt.Errorf("templatefile format specified but no template file given")
+			return nil, fmt.Errorf("%s format specified but no template file given", format)
 		}
 		data, err := ioutil.ReadFile(formatArgument)
 		if err != nil {
-			return nil, fmt.Errorf("error reading template %s, %v\n", formatArgument, err)
+			return nil, fmt.Errorf("error reading --template %s, %v\n", formatArgument, err)
 		}
-		templatePrinter, err := NewTemplatePrinter(data)
-		if err != nil {
-			return nil, fmt.Errorf("error parsing template %s, %v\n", string(data), err)
-		}
-		templatePrinter.AllowMissingKeys(allowMissingTemplateKeys)
-		printer = templatePrinter
 
-	case "jsonpath":
-		if len(formatArgument) == 0 {
-			return nil, fmt.Errorf("jsonpath template format specified but no template given")
-		}
-		jsonpathPrinter, err := NewJSONPathPrinter(formatArgument)
-		if err != nil {
-			return nil, fmt.Errorf("error parsing jsonpath %s, %v\n", formatArgument, err)
-		}
-		jsonpathPrinter.AllowMissingKeys(allowMissingTemplateKeys)
-		printer = jsonpathPrinter
+		formatArgument = string(data)
+		fallthrough
+	case "template", "go-template", "jsonpath":
+		// TODO: construct and bind this separately (at the command level)
 
-	case "jsonpath-file":
-		if len(formatArgument) == 0 {
-			return nil, fmt.Errorf("jsonpath file format specified but no template file given")
+		kubeTemplateFlags := KubeTemplatePrintFlags{
+			GoTemplatePrintFlags: &GoTemplatePrintFlags{
+				AllowMissingKeys: &allowMissingTemplateKeys,
+				TemplateArgument: &formatArgument,
+			},
+			JSONPathPrintFlags: &JSONPathPrintFlags{
+				AllowMissingKeys: &allowMissingTemplateKeys,
+				TemplateArgument: &formatArgument,
+			},
 		}
-		data, err := ioutil.ReadFile(formatArgument)
+
+		kubeTemplatePrinter, matched, err := kubeTemplateFlags.ToPrinter(format)
+		if !matched {
+			return nil, fmt.Errorf("unable to match a template printer to handle current print options")
+		}
 		if err != nil {
-			return nil, fmt.Errorf("error reading template %s, %v\n", formatArgument, err)
+			return nil, err
 		}
-		jsonpathPrinter, err := NewJSONPathPrinter(string(data))
-		if err != nil {
-			return nil, fmt.Errorf("error parsing template %s, %v\n", string(data), err)
-		}
-		jsonpathPrinter.AllowMissingKeys(allowMissingTemplateKeys)
-		printer = jsonpathPrinter
+
+		printer = kubeTemplatePrinter
 
 	case "custom-columns":
 		var err error
