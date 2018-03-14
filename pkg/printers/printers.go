@@ -24,6 +24,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
+var noPrinterMatchedErr = fmt.Errorf("unable to match a printer to handle current print options")
+
 // GetStandardPrinter takes a format type, an optional format argument. It will return
 // a printer or an error. The printer is agnostic to schema versions, so you must
 // send arguments to PrintObj in the version you wish them to be shown using a
@@ -34,11 +36,17 @@ func GetStandardPrinter(typer runtime.ObjectTyper, encoder runtime.Encoder, deco
 	var printer ResourcePrinter
 	switch format {
 
-	case "json":
-		printer = &JSONPrinter{}
+	case "json", "yaml":
+		jsonYamlFlags := NewJSONYamlPrintFlags()
+		p, matched, err := jsonYamlFlags.ToPrinter(format)
+		if !matched {
+			return nil, noPrinterMatchedErr
+		}
+		if err != nil {
+			return nil, err
+		}
 
-	case "yaml":
-		printer = &YAMLPrinter{}
+		printer = p
 
 	case "name":
 		printer = &NamePrinter{
@@ -73,7 +81,7 @@ func GetStandardPrinter(typer runtime.ObjectTyper, encoder runtime.Encoder, deco
 
 		kubeTemplatePrinter, matched, err := kubeTemplateFlags.ToPrinter(format)
 		if !matched {
-			return nil, fmt.Errorf("unable to match a template printer to handle current print options")
+			return nil, noPrinterMatchedErr
 		}
 		if err != nil {
 			return nil, err
