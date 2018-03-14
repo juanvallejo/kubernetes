@@ -24,6 +24,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
+var noPrinterMatchedErr = fmt.Errorf("unable to match a printer to handle current print options")
+
 // GetStandardPrinter takes a format type, an optional format argument. It will return
 // a printer or an error. The printer is agnostic to schema versions, so you must
 // send arguments to PrintObj in the version you wish them to be shown using a
@@ -34,11 +36,17 @@ func GetStandardPrinter(typer runtime.ObjectTyper, encoder runtime.Encoder, deco
 	var printer ResourcePrinter
 	switch format {
 
-	case "json":
-		printer = &JSONPrinter{}
+	case "json", "yaml":
+		jsonYamlFlags := NewJSONYamlPrintFlags()
+		p, matched, err := jsonYamlFlags.ToPrinter(format)
+		if !matched {
+			return nil, noPrinterMatchedErr
+		}
+		if err != nil {
+			return nil, err
+		}
 
-	case "yaml":
-		printer = &YAMLPrinter{}
+		printer = p
 
 	case "name":
 		printer = &NamePrinter{
@@ -46,57 +54,40 @@ func GetStandardPrinter(typer runtime.ObjectTyper, encoder runtime.Encoder, deco
 			Decoders: decoders,
 		}
 
-	case "template", "go-template":
+	case "templatefile", "go-template-file", "jsonpath-file":
 		if len(formatArgument) == 0 {
-			return nil, fmt.Errorf("template format specified but no template given")
-		}
-		templatePrinter, err := NewTemplatePrinter([]byte(formatArgument))
-		if err != nil {
-			return nil, fmt.Errorf("error parsing template %s, %v\n", formatArgument, err)
-		}
-		templatePrinter.AllowMissingKeys(allowMissingTemplateKeys)
-		printer = templatePrinter
-
-	case "templatefile", "go-template-file":
-		if len(formatArgument) == 0 {
-			return nil, fmt.Errorf("templatefile format specified but no template file given")
+			return nil, fmt.Errorf("%s format specified but no template file given", format)
 		}
 		data, err := ioutil.ReadFile(formatArgument)
 		if err != nil {
-			return nil, fmt.Errorf("error reading template %s, %v\n", formatArgument, err)
+			return nil, fmt.Errorf("error reading --template %s, %v\n", formatArgument, err)
 		}
-		templatePrinter, err := NewTemplatePrinter(data)
-		if err != nil {
-			return nil, fmt.Errorf("error parsing template %s, %v\n", string(data), err)
-		}
-		templatePrinter.AllowMissingKeys(allowMissingTemplateKeys)
-		printer = templatePrinter
 
-	case "jsonpath":
-		if len(formatArgument) == 0 {
-			return nil, fmt.Errorf("jsonpath template format specified but no template given")
-		}
-		jsonpathPrinter, err := NewJSONPathPrinter(formatArgument)
-		if err != nil {
-			return nil, fmt.Errorf("error parsing jsonpath %s, %v\n", formatArgument, err)
-		}
-		jsonpathPrinter.AllowMissingKeys(allowMissingTemplateKeys)
-		printer = jsonpathPrinter
+		formatArgument = string(data)
+		fallthrough
+	case "template", "go-template", "jsonpath":
+		// TODO: construct and bind this separately (at the command level)
 
-	case "jsonpath-file":
-		if len(formatArgument) == 0 {
-			return nil, fmt.Errorf("jsonpath file format specified but no template file given")
+		kubeTemplateFlags := KubeTemplatePrintFlags{
+			GoTemplatePrintFlags: &GoTemplatePrintFlags{
+				AllowMissingKeys: &allowMissingTemplateKeys,
+				TemplateArgument: &formatArgument,
+			},
+			JSONPathPrintFlags: &JSONPathPrintFlags{
+				AllowMissingKeys: &allowMissingTemplateKeys,
+				TemplateArgument: &formatArgument,
+			},
 		}
-		data, err := ioutil.ReadFile(formatArgument)
+
+		kubeTemplatePrinter, matched, err := kubeTemplateFlags.ToPrinter(format)
+		if !matched {
+			return nil, noPrinterMatchedErr
+		}
 		if err != nil {
-			return nil, fmt.Errorf("error reading template %s, %v\n", formatArgument, err)
+			return nil, err
 		}
-		jsonpathPrinter, err := NewJSONPathPrinter(string(data))
-		if err != nil {
-			return nil, fmt.Errorf("error parsing template %s, %v\n", string(data), err)
-		}
-		jsonpathPrinter.AllowMissingKeys(allowMissingTemplateKeys)
-		printer = jsonpathPrinter
+
+		printer = kubeTemplatePrinter
 
 	case "custom-columns":
 		var err error
@@ -118,7 +109,16 @@ func GetStandardPrinter(typer runtime.ObjectTyper, encoder runtime.Encoder, deco
 		fallthrough
 	case "":
 
-		printer = NewHumanReadablePrinter(encoder, decoders[0], options)
+		humanPrintFlags := NewHumanPrintFlags()
+		humanPrinter, matched, err := humanPrintFlags.ToPrinter(format, encoder, decoders[0])
+		if !matched {
+			return nil, noPrinterMatchedErr
+		}
+		if err != nil {
+			return nil, err
+		}
+
+		printer = humanPrinter
 	default:
 		return nil, fmt.Errorf("output format %q not recognized", format)
 	}

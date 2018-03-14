@@ -161,7 +161,7 @@ var _ = SIGDescribe("Servers with support for Table transformation", func() {
 func printTable(table *metav1beta1.Table) string {
 	buf := &bytes.Buffer{}
 	tw := tabwriter.NewWriter(buf, 5, 8, 1, ' ', 0)
-	err := printers.PrintTable(table, tw, printers.PrintOptions{})
+	err := printers.PrintTable(table, tw, &printers.TableOptions{})
 	Expect(err).NotTo(HaveOccurred())
 	tw.Flush()
 	return buf.String()
