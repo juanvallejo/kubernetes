@@ -28,5 +28,5 @@ type TableConvertor struct {
 }
 
 func (c TableConvertor) ConvertToTable(ctx genericapirequest.Context, obj runtime.Object, tableOptions runtime.Object) (*metav1beta1.Table, error) {
-	return c.TablePrinter.PrintTable(obj, printers.PrintOptions{Wide: true})
+	return c.TablePrinter.PrintTable(obj, printers.TableOptions{Wide: true})
 }

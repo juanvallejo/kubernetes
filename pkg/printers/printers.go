@@ -109,7 +109,16 @@ func GetStandardPrinter(typer runtime.ObjectTyper, encoder runtime.Encoder, deco
 		fallthrough
 	case "":
 
-		printer = NewHumanReadablePrinter(encoder, decoders[0], options)
+		humanPrintFlags := NewHumanPrintFlags()
+		humanPrinter, matched, err := humanPrintFlags.ToPrinter(format, encoder, decoders[0])
+		if !matched {
+			return nil, noPrinterMatchedErr
+		}
+		if err != nil {
+			return nil, err
+		}
+
+		printer = humanPrinter
 	default:
 		return nil, fmt.Errorf("output format %q not recognized", format)
 	}
