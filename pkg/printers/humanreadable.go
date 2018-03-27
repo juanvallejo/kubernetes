@@ -30,6 +30,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 )
 
@@ -291,16 +292,31 @@ func printHeader(columnNames []string, w io.Writer) error {
 }
 
 // PrintObj prints the obj in a human-friendly format according to the type of the obj.
-// TODO: unify the behavior of PrintObj, which often expects single items and tracks
-// headers and filtering, with other printers, that expect list objects. The tracking
-// behavior should probably be a higher level wrapper (MultiObjectTablePrinter) that
-// calls into the PrintTable method and then displays consistent output.
 func (h *HumanReadablePrinter) PrintObj(obj runtime.Object, output io.Writer) error {
-	if w, found := output.(*tabwriter.Writer); !found && !h.skipTabWriter {
+	if meta.IsListType(obj) {
+		items, err := meta.ExtractList(obj)
+		if err != nil {
+			return err
+		}
+
+		if errs := runtime.DecodeList(items, h.decoder); len(errs) > 0 {
+			return utilerrors.NewAggregate(errs)
+		}
+
+		for _, obj := range items {
+			if err := h.PrintObj(obj, output); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	w, found := output.(*tabwriter.Writer)
+	if !found && !h.skipTabWriter {
 		w = GetNewTabWriter(output)
 		output = w
-		defer w.Flush()
 	}
+	defer w.Flush()
 
 	// display tables following the rules of options
 	if table, ok := obj.(*metav1beta1.Table); ok {
@@ -320,6 +336,11 @@ func (h *HumanReadablePrinter) PrintObj(obj runtime.Object, output io.Writer) er
 	t := reflect.TypeOf(obj)
 	if handler := h.handlerMap[t]; handler != nil {
 		includeHeaders := h.lastType != t && !h.options.NoHeaders
+
+		if h.lastType != nil && h.lastType != t && !h.options.NoHeaders {
+			fmt.Fprintln(output)
+		}
+
 		if err := printRowsForHandlerEntry(output, handler, obj, h.options, includeHeaders); err != nil {
 			return err
 		}
@@ -330,6 +351,11 @@ func (h *HumanReadablePrinter) PrintObj(obj runtime.Object, output io.Writer) er
 	// print with the default handler if set, and use the columns from the last time
 	if h.defaultHandler != nil {
 		includeHeaders := h.lastType != h.defaultHandler && !h.options.NoHeaders
+
+		if h.lastType != nil && h.lastType != h.defaultHandler && !h.options.NoHeaders {
+			fmt.Fprintln(output)
+		}
+
 		if err := printRowsForHandlerEntry(output, h.defaultHandler, obj, h.options, includeHeaders); err != nil {
 			return err
 		}
