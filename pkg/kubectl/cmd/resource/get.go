@@ -45,13 +45,13 @@ import (
 	"k8s.io/kubernetes/pkg/kubectl/resource"
 	"k8s.io/kubernetes/pkg/kubectl/util/i18n"
 	"k8s.io/kubernetes/pkg/printers"
-	printersinternal "k8s.io/kubernetes/pkg/printers/internalversion"
+	"k8s.io/kubernetes/pkg/printers/flags"
 	"k8s.io/kubernetes/pkg/util/interrupt"
 )
 
 // GetOptions contains the input to the get command.
 type GetOptions struct {
-	HumanPrintFlags *printers.HumanPrintFlags
+	HumanPrintFlags *flags.HumanPrintFlags
 
 	Out, ErrOut io.Writer
 
@@ -73,7 +73,7 @@ type GetOptions struct {
 	PrintObj func(runtime.Object, *resource.Info, io.Writer) error
 
 	SortBy         string
-	MachineOutput  bool
+	GenericPrinter bool
 	IgnoreNotFound bool
 	ShowKind       bool
 	LabelColumns   []string
@@ -135,7 +135,7 @@ const (
 // NewGetOptions returns a GetOptions with default chunk size 500.
 func NewGetOptions(out io.Writer, errOut io.Writer) *GetOptions {
 	return &GetOptions{
-		HumanPrintFlags: printers.NewHumanPrintFlags(false, false, false),
+		HumanPrintFlags: flags.NewHumanPrintFlags(false, false, false),
 
 		Out:       out,
 		ErrOut:    errOut,
@@ -242,17 +242,14 @@ func (options *GetOptions) Complete(f cmdutil.Factory, cmd *cobra.Command, args 
 
 	printer, matches, err := options.HumanPrintFlags.ToPrinter(options.OutputFormat)
 	if !matches {
-		return fmt.Errorf("unable to match a printer to handle current print options")
+		printer, err = cmdutil.PrinterForOptions(cmdutil.ExtractCmdPrintOptions(cmd, options.AllNamespaces))
 	}
 	if err != nil {
 		return err
 	}
 
-	options.MachineOutput = printer.IsGeneric()
-
-	// TODO(juanvallejo): handling this inside of humanprinter_flags.go causes an import cycle
-	// figure out how to attach these handlers without resorting to each command having to do it.
-	printersinternal.AddHandlers(printer.(*printers.HumanReadablePrinter))
+	options.ShowKind = options.ShowKind || resource.MultipleTypesRequested(args)
+	options.GenericPrinter = printer.IsGeneric()
 
 	options.PrintObj = func(obj runtime.Object, info *resource.Info, out io.Writer) error {
 		// handle human-readable printing
@@ -329,7 +326,7 @@ func (options *GetOptions) Run(f cmdutil.Factory, cmd *cobra.Command, args []str
 		Latest().
 		Flatten().
 		TransformRequests(func(req *rest.Request) {
-			if options.ServerPrint && !options.MachineOutput && len(options.SortBy) == 0 {
+			if options.ServerPrint && !options.GenericPrinter && len(options.SortBy) == 0 {
 				group := metav1beta1.GroupName
 				version := metav1beta1.SchemeGroupVersion.Version
 
@@ -346,7 +343,7 @@ func (options *GetOptions) Run(f cmdutil.Factory, cmd *cobra.Command, args []str
 		return err
 	}
 
-	if options.MachineOutput {
+	if options.GenericPrinter {
 		return options.printGeneric(r, cmd)
 	}
 
@@ -380,11 +377,8 @@ func (options *GetOptions) Run(f cmdutil.Factory, cmd *cobra.Command, args []str
 		}
 	}
 
-	options.ShowKind = options.ShowKind || resource.MultipleTypesRequested(args) || cmdutil.MustPrintWithKinds(objs, infos, sorter)
 	out := printers.GetNewTabWriter(options.Out)
-
 	allErrs := []error{}
-
 	for ix := range objs {
 		info := infos[ix]
 		if sorter != nil {
