@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package printers
+package flags
 
 import (
 	"fmt"
@@ -24,6 +24,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"k8s.io/kubernetes/pkg/kubectl/scheme"
+	"k8s.io/kubernetes/pkg/printers"
 )
 
 // CustomColumnsPrintFlags provides default flags necessary for printing
@@ -37,7 +38,7 @@ type CustomColumnsPrintFlags struct {
 // handling custom-column printing.
 // Returns false if the specified templateFormat does not match a supported format.
 // Supported format types can be found in pkg/printers/printers.go
-func (f *CustomColumnsPrintFlags) ToPrinter(templateFormat string) (ResourcePrinter, bool, error) {
+func (f *CustomColumnsPrintFlags) ToPrinter(templateFormat string) (printers.ResourcePrinter, bool, error) {
 	if len(templateFormat) == 0 {
 		return nil, false, fmt.Errorf("missing output format")
 	}
@@ -78,11 +79,11 @@ func (f *CustomColumnsPrintFlags) ToPrinter(templateFormat string) (ResourcePrin
 			return nil, true, fmt.Errorf("error reading template %s, %v\n", templateValue, err)
 		}
 		defer file.Close()
-		p, err := NewCustomColumnsPrinterFromTemplate(file, decoder)
+		p, err := printers.NewCustomColumnsPrinterFromTemplate(file, decoder)
 		return p, true, err
 	}
 
-	p, err := NewCustomColumnsPrinterFromSpec(templateValue, decoder, f.NoHeaders)
+	p, err := printers.NewCustomColumnsPrinterFromSpec(templateValue, decoder, f.NoHeaders)
 	return p, true, err
 }
 

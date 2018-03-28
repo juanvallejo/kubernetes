@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package printers_test
+package flags_test
 
 import (
 	"bytes"
@@ -26,7 +26,7 @@ import (
 
 	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/kubernetes/pkg/printers"
+	"k8s.io/kubernetes/pkg/printers/flags"
 )
 
 func TestNamePrinterSupportsExpectedFormats(t *testing.T) {
@@ -90,7 +90,7 @@ func TestNamePrinterSupportsExpectedFormats(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			printFlags := printers.NamePrintFlags{
+			printFlags := flags.NamePrintFlags{
 				Operation: tc.operation,
 				DryRun:    tc.dryRun,
 			}
