@@ -33,30 +33,6 @@ func GetStandardPrinter(typer runtime.ObjectTyper, encoder runtime.Encoder, deco
 	var printer ResourcePrinter
 	switch format {
 
-	case "json", "yaml":
-		jsonYamlFlags := NewJSONYamlPrintFlags()
-		p, matched, err := jsonYamlFlags.ToPrinter(format)
-		if !matched {
-			return nil, fmt.Errorf("unable to match a printer to handle current print options")
-		}
-		if err != nil {
-			return nil, err
-		}
-
-		printer = p
-
-	case "name":
-		nameFlags := NewNamePrintFlags("", false)
-		namePrinter, matched, err := nameFlags.ToPrinter(format)
-		if !matched {
-			return nil, fmt.Errorf("unable to match a name printer to handle current print options")
-		}
-		if err != nil {
-			return nil, err
-		}
-
-		printer = namePrinter
-
 	case "template", "go-template":
 		if len(formatArgument) == 0 {
 			return nil, fmt.Errorf("template format specified but no template given")
@@ -109,26 +85,6 @@ func GetStandardPrinter(typer runtime.ObjectTyper, encoder runtime.Encoder, deco
 		jsonpathPrinter.AllowMissingKeys(allowMissingTemplateKeys)
 		printer = jsonpathPrinter
 
-	case "custom-columns", "custom-columns-file":
-		customColumnsFlags := &CustomColumnsPrintFlags{
-			NoHeaders:        options.NoHeaders,
-			TemplateArgument: formatArgument,
-		}
-		customColumnsPrinter, matched, err := customColumnsFlags.ToPrinter(format)
-		if !matched {
-			return nil, fmt.Errorf("unable to match a name printer to handle current print options")
-		}
-		if err != nil {
-			return nil, err
-		}
-
-		printer = customColumnsPrinter
-
-	case "wide":
-		fallthrough
-	case "":
-
-		printer = NewHumanReadablePrinter(encoder, decoders[0], options)
 	default:
 		return nil, fmt.Errorf("output format %q not recognized", format)
 	}

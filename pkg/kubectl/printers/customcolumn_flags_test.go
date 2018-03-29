@@ -26,10 +26,10 @@ import (
 
 	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/kubernetes/pkg/printers"
+	"k8s.io/kubernetes/pkg/kubectl/printers"
 )
 
-func TestNamePrinterSupportsExpectedFormats(t *testing.T) {
+func TestPrinterSupportsExpectedCustomColumnFormats(t *testing.T) {
 	testObject := &v1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "foo"}}
 
 	customColumnsFile, err := ioutil.TempFile("", "printers_jsonpath_flags")
@@ -44,37 +44,41 @@ func TestNamePrinterSupportsExpectedFormats(t *testing.T) {
 	fmt.Fprintf(customColumnsFile, "NAME\n.metadata.name")
 
 	testCases := []struct {
-		name           string
-		outputFormat   string
-		operation      string
-		dryRun         bool
-		expectedError  string
-		expectedOutput string
-		expectNoMatch  bool
+		name               string
+		outputFormat       string
+		templateArg        string
+		expectedError      string
+		expectedParseError string
+		expectedOutput     string
+		expectNoMatch      bool
 	}{
 		{
-			name:           "valid \"name\" output format with no operation prints resource name",
-			outputFormat:   "name",
-			expectedOutput: "pod/foo",
+			name:           "valid output format also containing the custom-columns argument succeeds",
+			outputFormat:   "custom-columns=NAME:.metadata.name",
+			expectedOutput: "foo",
 		},
 		{
-			name:           "valid \"name\" output format and an operation prints success message",
-			outputFormat:   "name",
-			operation:      "patched",
-			expectedOutput: "pod/foo patched",
+			name:          "valid output format and no --template argument results in an error",
+			outputFormat:  "custom-columns",
+			expectedError: "custom-columns format specified but no custom columns given",
 		},
 		{
-			name:           "valid \"name\" output format and an operation prints success message with dry run",
-			outputFormat:   "name",
-			operation:      "patched",
-			dryRun:         true,
-			expectedOutput: "pod/foo patched (dry run)",
+			name:           "valid output format and --template argument succeeds",
+			outputFormat:   "custom-columns",
+			templateArg:    "NAME:.metadata.name",
+			expectedOutput: "foo",
 		},
 		{
-			name:          "operation and no valid \"name\" output does not match a printer",
-			operation:     "patched",
-			dryRun:        true,
-			expectNoMatch: true,
+			name:           "custom-columns template file should match, and successfully return correct value",
+			outputFormat:   "custom-columns-file",
+			templateArg:    customColumnsFile.Name(),
+			expectedOutput: "foo",
+		},
+		{
+			name:          "valid output format and invalid --template argument results in a parsing error from the printer",
+			outputFormat:  "custom-columns",
+			templateArg:   "invalid",
+			expectedError: "unexpected custom-columns spec: invalid, expected <header>:<json-path-expr>",
 		},
 		{
 			name:          "no printer is matched on an invalid outputFormat",
@@ -82,7 +86,7 @@ func TestNamePrinterSupportsExpectedFormats(t *testing.T) {
 			expectNoMatch: true,
 		},
 		{
-			name:          "printer should not match on any other format supported by another printer",
+			name:          "custom-columns printer should not match on any other format supported by another printer",
 			outputFormat:  "go-template",
 			expectNoMatch: true,
 		},
@@ -90,9 +94,8 @@ func TestNamePrinterSupportsExpectedFormats(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			printFlags := printers.NamePrintFlags{
-				Operation: tc.operation,
-				DryRun:    tc.dryRun,
+			printFlags := printers.CustomColumnsPrintFlags{
+				TemplateArgument: tc.templateArg,
 			}
 
 			p, matched, err := printFlags.ToPrinter(tc.outputFormat)
@@ -118,6 +121,12 @@ func TestNamePrinterSupportsExpectedFormats(t *testing.T) {
 
 			out := bytes.NewBuffer([]byte{})
 			err = p.PrintObj(testObject, out)
+			if len(tc.expectedParseError) > 0 {
+				if err == nil || !strings.Contains(err.Error(), tc.expectedParseError) {
+					t.Errorf("expecting error %q, got %v", tc.expectedError, err)
+				}
+				return
+			}
 			if err != nil {
 				t.Errorf("unexpected error: %v", err)
 			}
