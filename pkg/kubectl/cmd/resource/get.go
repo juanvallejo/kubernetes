@@ -242,6 +242,7 @@ func (options *GetOptions) Complete(f cmdutil.Factory, cmd *cobra.Command, args 
 
 	printer, matches, err := options.HumanPrintFlags.ToPrinter(options.OutputFormat)
 	if !matches {
+		glog.V(2).Infof("Couldn't match printer for the following flags %#v", options.HumanPrintFlags)
 		printer, err = cmdutil.PrinterForOptions(cmdutil.ExtractCmdPrintOptions(cmd, options.AllNamespaces))
 	}
 	if err != nil {
@@ -264,7 +265,6 @@ func (options *GetOptions) Complete(f cmdutil.Factory, cmd *cobra.Command, args 
 				}
 				humanPrinter.EnsurePrintWithKind(kind)
 			}
-
 			return humanPrinter.PrintObj(info.AsInternal(), out)
 		}
 
@@ -327,11 +327,8 @@ func (options *GetOptions) Run(f cmdutil.Factory, cmd *cobra.Command, args []str
 		Flatten().
 		TransformRequests(func(req *rest.Request) {
 			if options.ServerPrint && !options.GenericPrinter && len(options.SortBy) == 0 {
-				group := metav1beta1.GroupName
-				version := metav1beta1.SchemeGroupVersion.Version
-
-				tableParam := fmt.Sprintf("application/json;as=Table;v=%s;g=%s, application/json", version, group)
-				req.SetHeader("Accept", tableParam)
+				req.SetHeader("Accept", fmt.Sprintf("application/json;as=Table;v=%s;g=%s, application/json",
+					metav1beta1.SchemeGroupVersion.Version, metav1beta1.GroupName))
 			}
 		}).
 		Do()
@@ -355,8 +352,7 @@ func (options *GetOptions) Run(f cmdutil.Factory, cmd *cobra.Command, args []str
 	objs := make([]runtime.Object, len(infos))
 	for ix := range infos {
 		if options.ServerPrint {
-			table, err := options.decodeIntoTable(cmdutil.InternalVersionJSONEncoder(), infos[ix].Object)
-			if err == nil {
+			if table, err := options.decodeIntoTable(cmdutil.InternalVersionJSONEncoder(), infos[ix].Object); err == nil {
 				infos[ix].Object = table
 			} else {
 				// if we are unable to decode server response into a v1beta1.Table,
@@ -375,10 +371,12 @@ func (options *GetOptions) Run(f cmdutil.Factory, cmd *cobra.Command, args []str
 		if sorter, err = kubectl.SortObjects(cmdutil.InternalVersionDecoder(), objs, options.SortBy); err != nil {
 			return err
 		}
+		// TODO: sorting for tabled/server-print output
 	}
 
 	out := printers.GetNewTabWriter(options.Out)
 	allErrs := []error{}
+	nonEmptyObjCount := 0
 	for ix := range objs {
 		info := infos[ix]
 		if sorter != nil {
@@ -392,28 +390,15 @@ func (options *GetOptions) Run(f cmdutil.Factory, cmd *cobra.Command, args []str
 				continue
 			}
 		}
-
 		out.Flush()
 
+		nonEmptyObjCount++
 		if err := options.PrintObj(info.Object, info, out); err != nil {
 			allErrs = append(allErrs, err)
 			continue
 		}
 	}
-
 	out.Flush()
-
-	nonEmptyObjCount := 0
-	for _, obj := range objs {
-		if table, ok := obj.(*metav1beta1.Table); ok {
-			// exclude any Table objects with empty rows from our total object count
-			if len(table.Rows) == 0 {
-				continue
-			}
-		}
-
-		nonEmptyObjCount++
-	}
 
 	if nonEmptyObjCount == 0 && !options.IgnoreNotFound {
 		fmt.Fprintln(options.ErrOut, "No resources found.")
