@@ -1758,8 +1758,108 @@ run_template_output_tests() {
   output_message=$(kubectl "${kube_flags[@]}" convert -f hack/testdata/deployment-revision1.yaml --output-version=apps/v1beta1 --template="{{ .metadata.name }}:")
   kube::test::if_has_string "${output_message}" 'nginx:'
 
+  # check that rolling-update command supports --template output
+  kubectl create "${kube_flags[@]}" -f hack/testdata/frontend-controller.yaml
+  output_message=$(kubectl "${kube_flags[@]}" rolling-update frontend --update-period=1s --dry-run --image-pull-policy=IfNotPresent --image=nginx --template="{{ .metadata.name }}:")
+  kube::test::if_has_string "${output_message}" 'frontend:'
+
+  # check that run command supports --template output
+  output_message=$(kubectl "${kube_flags[@]}" run --dry-run --template="{{ .metadata.name }}:" pi --image=perl --restart=OnFailure -- perl -Mbignum=bpi -wle 'print bpi(2000)')
+  kube::test::if_has_string "${output_message}" 'pi:'
+
+  # check that taint command supports --template output
+  output_message=$(kubectl "${kube_flags[@]}" taint node 127.0.0.1 dedicated=foo:PreferNoSchedule --template="{{ .metadata.name }}:")
+  kube::test::if_has_string "${output_message}" '127.0.0.1:'
+  # untaint node
+  kubectl taint node 127.0.0.1 dedicated-
+
+  # check that "apply set-last-applied" command supports --template output
+  kubectl "${kube_flags[@]}" create -f test/e2e/testing-manifests/statefulset/cassandra/controller.yaml
+  output_message=$(kubectl "${kube_flags[@]}" apply set-last-applied -f test/e2e/testing-manifests/statefulset/cassandra/controller.yaml --dry-run --create-annotation --template="{{ .metadata.name }}:")
+  kube::test::if_has_string "${output_message}" 'cassandra:'
+
+  # check that "auth reconcile" command supports --template output
+  output_message=$(kubectl "${kube_flags[@]}" auth reconcile --dry-run -f test/fixtures/pkg/kubectl/cmd/auth/rbac-resource-plus.yaml --template="{{ .metadata.name }}:")
+  kube::test::if_has_string "${output_message}" 'testing-CR:testing-CRB:testing-RB:testing-R:'
+
+  # check that "config view" command supports --template output
+  output_message=$(kubectl "${kube_flags[@]}" config view --template="{{ .kind }}:")
+  kube::test::if_has_string "${output_message}" 'Config'
+
+  # check that "create clusterrole" command supports --template output
+  output_message=$(kubectl "${kube_flags[@]}" create clusterrole --template="{{ .metadata.name }}:" --verb get myclusterrole  --non-resource-url /logs/ --resource pods)
+  kube::test::if_has_string "${output_message}" 'myclusterrole:'
+
+  # check that "create clusterrolebinding" command supports --template output
+  output_message=$(kubectl "${kube_flags[@]}" create clusterrolebinding foo --clusterrole=myclusterrole --dry-run --template="{{ .metadata.name }}:")
+  kube::test::if_has_string "${output_message}" 'foo:'
+
+  # check that "create configmap" command supports --template output
+  output_message=$(kubectl "${kube_flags[@]}" create configmap cm --template="{{ .metadata.name }}:")
+  kube::test::if_has_string "${output_message}" 'cm:'
+
+  # check that "create deployment" command supports --template output
+  output_message=$(kubectl "${kube_flags[@]}" create deployment deploy --image=nginx --template="{{ .metadata.name }}:")
+  kube::test::if_has_string "${output_message}" 'deploy:'
+
+  # check that "create job" command supports --template output
+  kubectl create "${kube_flags[@]}" -f - <<EOF
+apiVersion: batch/v2alpha1
+kind: CronJob
+metadata:
+  name: pi
+spec:
+  schedule: "*/10 * * * *"
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            parent: "pi"
+        spec:
+          containers:
+          - name: pi
+            image: perl
+            command: ["perl",  "-Mbignum=bpi", "-wle", "print bpi(2000)"]
+          restartPolicy: OnFailure
+EOF
+  output_message=$(kubectl "${kube_flags[@]}" create job foo --from=cronjob/pi --dry-run --template="{{ .metadata.name }}:")
+  kube::test::if_has_string "${output_message}" 'foo:'
+
+  # check that "create namespace" command supports --template output
+  output_message=$(kubectl "${kube_flags[@]}" create ns bar --dry-run --template="{{ .metadata.name }}:")
+  kube::test::if_has_string "${output_message}" 'bar:'
+
+  # check that "create namespace" command supports --template output
+  output_message=$(kubectl "${kube_flags[@]}" create rolebinding foo --clusterrole=myclusterrole --dry-run --template="{{ .metadata.name }}:")
+  kube::test::if_has_string "${output_message}" 'foo:'
+
+  # check that "create role" command supports --template output
+  output_message=$(kubectl "${kube_flags[@]}" create role --dry-run --template="{{ .metadata.name }}:" --verb get myrole --resource pods)
+  kube::test::if_has_string "${output_message}" 'myrole:'
+
+  # check that "create quota" command supports --template output
+  output_message=$(kubectl "${kube_flags[@]}" create quota foo --dry-run --template="{{ .metadata.name }}:")
+  kube::test::if_has_string "${output_message}" 'foo:'
+
+  # check that "create priorityclass" command supports --template output
+  output_message=$(kubectl "${kube_flags[@]}" create priorityclass foo --dry-run --template="{{ .metadata.name }}:")
+  kube::test::if_has_string "${output_message}" 'foo:'
+
+  # check that "create poddisruptionbudget" command supports --template output
+  output_message=$(kubectl "${kube_flags[@]}" create poddisruptionbudget foo --dry-run --selector=foo --min-available=1 --template="{{ .metadata.name }}:")
+  kube::test::if_has_string "${output_message}" 'foo:'
+
+  # check that "create serviceaccount" command supports --template output
+  output_message=$(kubectl "${kube_flags[@]}" create serviceaccount foo --dry-run --template="{{ .metadata.name }}:")
+  kube::test::if_has_string "${output_message}" 'foo:'
+
   # cleanup
+  kubectl delete cronjob pi "${kube_flags[@]}"
   kubectl delete pods valid-pod "${kube_flags[@]}"
+  kubectl delete rc frontend "${kube_flags[@]}"
+  kubectl delete rc cassandra "${kube_flags[@]}"
+  kubectl delete clusterrole myclusterrole "${kube_flags[@]}"
 
   set +o nounset
   set +o errexit
