@@ -1878,6 +1878,34 @@ EOF
   output_message=$(kubectl "${kube_flags[@]}" set subject clusterrolebinding/foo --user=foo --dry-run --template="{{ .metadata.name }}:")
   kube::test::if_has_string "${output_message}" 'foo:'
 
+  # check that "create secret docker-registry" command supports --template output
+  output_message=$(kubectl "${kube_flags[@]}" create secret docker-registry foo --docker-username user --docker-password pass --docker-email foo@bar.baz --dry-run --template="{{ .metadata.name }}:")
+  kube::test::if_has_string "${output_message}" 'foo:'
+
+  # check that "create secret generic" command supports --template output
+  output_message=$(kubectl "${kube_flags[@]}" create secret generic foo --from-literal=key1=value1 --dry-run --template="{{ .metadata.name }}:")
+  kube::test::if_has_string "${output_message}" 'foo:'
+
+  # check that "create secret tls" command supports --template output
+  output_message=$(kubectl "${kube_flags[@]}" create secret tls --dry-run foo --key=hack/testdata/tls.key --cert=hack/testdata/tls.crt --template="{{ .metadata.name }}:")
+  kube::test::if_has_string "${output_message}" 'foo:'
+
+  # check that "create service clusterip" command supports --template output
+  output_message=$(kubectl "${kube_flags[@]}" create service clusterip foo --dry-run --tcp=8080 --template="{{ .metadata.name }}:")
+  kube::test::if_has_string "${output_message}" 'foo:'
+
+  # check that "create service externalname" command supports --template output
+  output_message=$(kubectl "${kube_flags[@]}" create service externalname foo --dry-run --external-name=bar --template="{{ .metadata.name }}:")
+  kube::test::if_has_string "${output_message}" 'foo:'
+
+  # check that "create service loadbalancer" command supports --template output
+  output_message=$(kubectl "${kube_flags[@]}" create service loadbalancer foo --dry-run --tcp=8080 --template="{{ .metadata.name }}:")
+  kube::test::if_has_string "${output_message}" 'foo:'
+
+  # check that "create service nodeport" command supports --template output
+  output_message=$(kubectl "${kube_flags[@]}" create service nodeport foo --dry-run --tcp=8080 --template="{{ .metadata.name }}:")
+  kube::test::if_has_string "${output_message}" 'foo:'
+
   # cleanup
   kubectl delete cronjob pi "${kube_flags[@]}"
   kubectl delete pods valid-pod "${kube_flags[@]}"
