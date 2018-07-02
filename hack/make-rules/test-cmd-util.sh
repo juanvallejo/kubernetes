@@ -1854,6 +1854,30 @@ EOF
   output_message=$(kubectl "${kube_flags[@]}" create serviceaccount foo --dry-run --template="{{ .metadata.name }}:")
   kube::test::if_has_string "${output_message}" 'foo:'
 
+  # check that "set env" command supports --template output
+  output_message=$(kubectl "${kube_flags[@]}" set env pod/valid-pod --dry-run A=B --template="{{ .metadata.name }}:")
+  kube::test::if_has_string "${output_message}" 'valid-pod:'
+
+  # check that "set image" command supports --template output
+  output_message=$(kubectl "${kube_flags[@]}" set image pod/valid-pod --dry-run kubernetes-serve-hostname=nginx --template="{{ .metadata.name }}:")
+  kube::test::if_has_string "${output_message}" 'valid-pod:'
+
+  # check that "set resources" command supports --template output
+  output_message=$(kubectl "${kube_flags[@]}" set resources pod/valid-pod --limits=memory=256Mi --dry-run --template="{{ .metadata.name }}:")
+  kube::test::if_has_string "${output_message}" 'valid-pod:'
+
+  # check that "set selector" command supports --template output
+  output_message=$(kubectl "${kube_flags[@]}" set selector -f hack/testdata/kubernetes-service.yaml A=B --local --dry-run --template="{{ .metadata.name }}:")
+  kube::test::if_has_string "${output_message}" 'kubernetes:'
+
+  # check that "set serviceaccount" command supports --template output
+  output_message=$(kubectl "${kube_flags[@]}" set serviceaccount pod/valid-pod deployer --dry-run --template="{{ .metadata.name }}:")
+  kube::test::if_has_string "${output_message}" 'valid-pod:'
+
+  # check that "set subject" command supports --template output
+  output_message=$(kubectl "${kube_flags[@]}" set subject clusterrolebinding/foo --user=foo --dry-run --template="{{ .metadata.name }}:")
+  kube::test::if_has_string "${output_message}" 'foo:'
+
   # cleanup
   kubectl delete cronjob pi "${kube_flags[@]}"
   kubectl delete pods valid-pod "${kube_flags[@]}"
