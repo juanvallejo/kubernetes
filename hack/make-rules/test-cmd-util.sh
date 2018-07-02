@@ -1710,6 +1710,61 @@ run_kubectl_request_timeout_tests() {
   set +o errexit
 }
 
+run_template_output_tests() {
+  set -o nounset
+  set -o errexit
+
+  kube::log::status "Testing --template support on commands"
+  ### Test global request timeout option
+  # Pre-condition: no POD exists
+  create_and_use_new_namespace
+  kube::test::get_object_assert pods "{{range.items}}{{$id_field}}:{{end}}" ''
+  # Command
+  # check that create supports --template output
+  kubectl create "${kube_flags[@]}" -f test/fixtures/doc-yaml/admin/limitrange/valid-pod.yaml
+  # Post-condition: valid-pod POD is created
+  kubectl get "${kube_flags[@]}" pods -o json
+  kube::test::get_object_assert pods "{{range.items}}{{$id_field}}:{{end}}" 'valid-pod:'
+
+  # check that patch command supports --template output
+  output_message=$(kubectl "${kube_flags[@]}" patch --dry-run pods/valid-pod -p '{"patched":"value3"}' --type=merge --template="{{ .metadata.name }}:")
+  kube::test::if_has_string "${output_message}" 'valid-pod:'
+
+  # check that label command supports --template output
+  output_message=$(kubectl "${kube_flags[@]}" label --dry-run pods/valid-pod label=value --template="{{ .metadata.name }}:")
+  kube::test::if_has_string "${output_message}" 'valid-pod:'
+
+  # check that annotate command supports --template output
+  output_message=$(kubectl "${kube_flags[@]}" annotate --dry-run pods/valid-pod annotation=value --template="{{ .metadata.name }}:")
+  kube::test::if_has_string "${output_message}" 'valid-pod:'
+
+  # check that apply command supports --template output
+  output_message=$(kubectl "${kube_flags[@]}" apply --dry-run -f test/fixtures/doc-yaml/admin/limitrange/valid-pod.yaml --template="{{ .metadata.name }}:")
+  kube::test::if_has_string "${output_message}" 'valid-pod:'
+
+  # check that create command supports --template output
+  output_message=$(kubectl "${kube_flags[@]}" create -f test/fixtures/doc-yaml/admin/limitrange/valid-pod.yaml --dry-run --template="{{ .metadata.name }}:")
+  kube::test::if_has_string "${output_message}" 'valid-pod:'
+
+  # check that autoscale command supports --template output
+  output_message=$(kubectl "${kube_flags[@]}" autoscale --max=2 -f hack/testdata/scale-deploy-1.yaml --dry-run --template="{{ .metadata.name }}:")
+  kube::test::if_has_string "${output_message}" 'scale-1:'
+
+  # check that expose command supports --template output
+  output_message=$(kubectl "${kube_flags[@]}" expose -f hack/testdata/redis-slave-replicaset.yaml --save-config --port=80 --target-port=8000 --dry-run --template="{{ .metadata.name }}:")
+  kube::test::if_has_string "${output_message}" 'redis-slave:'
+
+  # check that convert command supports --template output
+  output_message=$(kubectl "${kube_flags[@]}" convert -f hack/testdata/deployment-revision1.yaml --output-version=apps/v1beta1 --template="{{ .metadata.name }}:")
+  kube::test::if_has_string "${output_message}" 'nginx:'
+
+  # cleanup
+  kubectl delete pods valid-pod "${kube_flags[@]}"
+
+  set +o nounset
+  set +o errexit
+}
+
 run_crd_tests() {
   set -o nounset
   set -o errexit
@@ -5396,6 +5451,14 @@ runTests() {
     if kube::test::if_supports_resource "${nodes}" ; then
       record_command run_kubectl_all_namespace_tests
     fi
+  fi
+
+  ######################
+  # kubectl --template #
+  ######################
+
+  if kube::test::if_supports_resource "${pods}" ; then
+    record_command run_template_output_tests
   fi
 
   ################
