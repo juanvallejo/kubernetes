@@ -1786,20 +1786,20 @@ run_template_output_tests() {
   kube::test::if_has_string "${output_message}" 'myclusterrole:'
 
   # check that "create clusterrolebinding" command supports --template output
-  output_message=$(kubectl "${kube_flags[@]}" create clusterrolebinding foo --clusterrole=myclusterrole --dry-run --template="{{ .metadata.name }}:")
+  output_message=$(kubectl "${kube_flags[@]}" create clusterrolebinding foo --clusterrole=myclusterrole --template="{{ .metadata.name }}:")
   kube::test::if_has_string "${output_message}" 'foo:'
 
   # check that "create configmap" command supports --template output
-  output_message=$(kubectl "${kube_flags[@]}" create configmap cm --template="{{ .metadata.name }}:")
+  output_message=$(kubectl "${kube_flags[@]}" create configmap cm --dry-run --template="{{ .metadata.name }}:")
   kube::test::if_has_string "${output_message}" 'cm:'
 
   # check that "create deployment" command supports --template output
-  output_message=$(kubectl "${kube_flags[@]}" create deployment deploy --image=nginx --template="{{ .metadata.name }}:")
+  output_message=$(kubectl "${kube_flags[@]}" create deployment deploy --dry-run --image=nginx --template="{{ .metadata.name }}:")
   kube::test::if_has_string "${output_message}" 'deploy:'
 
   # check that "create job" command supports --template output
   kubectl create "${kube_flags[@]}" -f - <<EOF
-apiVersion: batch/v2alpha1
+apiVersion: batch/v1beta1
 kind: CronJob
 metadata:
   name: pi
@@ -1903,10 +1903,10 @@ EOF
 
   # cleanup
   kubectl delete cronjob pi "${kube_flags[@]}"
-  kubectl delete pods valid-pod "${kube_flags[@]}"
-  kubectl delete rc frontend "${kube_flags[@]}"
+  kubectl delete pods --all "${kube_flags[@]}"
   kubectl delete rc cassandra "${kube_flags[@]}"
   kubectl delete clusterrole myclusterrole "${kube_flags[@]}"
+  kubectl delete clusterrolebinding foo "${kube_flags[@]}"
 
   set +o nounset
   set +o errexit
