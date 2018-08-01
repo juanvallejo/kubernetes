@@ -22,7 +22,6 @@ import (
 	"os/exec"
 	"syscall"
 
-	"github.com/golang/glog"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"k8s.io/kubernetes/pkg/kubectl/cmd/templates"
@@ -43,30 +42,14 @@ var (
 
 // NewCmdPlugin creates the command that is the top-level for plugin commands.
 func NewCmdPlugin(f cmdutil.Factory, streams genericclioptions.IOStreams) *cobra.Command {
-	// Loads plugins and create commands for each plugin identified
-	loadedPlugins, loadErr := pluginLoader().Load()
-	if loadErr != nil {
-		glog.V(1).Infof("Unable to load plugins: %v", loadErr)
-	}
-
 	cmd := &cobra.Command{
 		Use: "plugin NAME",
 		DisableFlagsInUseLine: true,
 		Short: i18n.T("Runs a command-line plugin"),
 		Long:  plugin_long,
 		Run: func(cmd *cobra.Command, args []string) {
-			if len(loadedPlugins) == 0 {
-				cmdutil.CheckErr(fmt.Errorf("no plugins installed."))
-			}
 			cmdutil.DefaultSubCommandRun(streams.ErrOut)(cmd, args)
 		},
-	}
-
-	if len(loadedPlugins) > 0 {
-		pluginRunner := pluginRunner()
-		for _, p := range loadedPlugins {
-			cmd.AddCommand(NewCmdForPlugin(f, p, pluginRunner, streams))
-		}
 	}
 
 	return cmd

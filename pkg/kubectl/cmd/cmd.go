@@ -21,6 +21,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
+	"strings"
+	"syscall"
+
+	"github.com/spf13/cobra"
 
 	"k8s.io/apimachinery/pkg/api/meta"
 	utilflag "k8s.io/apiserver/pkg/util/flag"
@@ -36,7 +41,6 @@ import (
 	"k8s.io/kubernetes/pkg/kubectl/cmd/wait"
 	"k8s.io/kubernetes/pkg/kubectl/util/i18n"
 
-	"github.com/spf13/cobra"
 	"k8s.io/kubernetes/pkg/kubectl/genericclioptions"
 )
 
@@ -257,7 +261,56 @@ var (
 )
 
 func NewDefaultKubectlCommand() *cobra.Command {
-	return NewKubectlCommand(os.Stdin, os.Stdout, os.Stderr)
+	cmd := NewKubectlCommand(os.Stdin, os.Stdout, os.Stderr)
+
+	if len(os.Args) > 1 {
+		cmdPathPieces := os.Args[1:]
+
+		// only look for suitable extension executables if
+		// the specified command does not already exist
+		if _, _, err := cmd.Find(cmdPathPieces); err != nil {
+			handleEndpointExtensions(cmdPathPieces)
+		}
+	}
+
+	return cmd
+}
+
+func handleEndpointExtensions(cmdArgs []string) {
+	remainingArgs := []string{} // all "non-flag" arguments
+
+	for idx := range cmdArgs {
+		if strings.HasPrefix(cmdArgs[idx], "-") {
+			break
+		}
+		remainingArgs = append(remainingArgs, strings.Replace(cmdArgs[idx], "-", "_", -1))
+	}
+
+	foundBinaryPath := ""
+
+	// attempt to find binary, starting at longest possible name with given cmdArgs
+	for len(remainingArgs) > 0 {
+		path, err := exec.LookPath(fmt.Sprintf("kubectl-%s", strings.Join(remainingArgs, "-")))
+		if err != nil || len(path) == 0 {
+			remainingArgs = remainingArgs[:len(remainingArgs)-1]
+			continue
+		}
+
+		foundBinaryPath = path
+		break
+	}
+
+	if len(foundBinaryPath) == 0 {
+		return
+	}
+
+	// invoke cmd binary relaying the current environment and args given
+	// remainingArgs will always have at least one element.
+	// execve will make remainingArgs[0] the "binary name".
+	if err := syscall.Exec(foundBinaryPath, append([]string{foundBinaryPath}, cmdArgs[len(remainingArgs):]...), os.Environ()); err != nil {
+		fmt.Fprintf(os.Stderr, "%v\n", err)
+		os.Exit(1)
+	}
 }
 
 // NewKubectlCommand creates the `kubectl` command and its nested children.
