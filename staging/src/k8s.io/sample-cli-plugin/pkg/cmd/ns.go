@@ -1,3 +1,19 @@
+/*
+Copyright 2018 The Kubernetes Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package cmd
 
 import (
@@ -18,19 +34,24 @@ var (
 	%[1]s ns
 
 	# view all of the namespaces in use by contexts in your KUBECONFIG
-	%[1] ns --list
+	%[1]s ns --list
 
 	# switch your current-context to one that contains the desired namespace
 	%[1]s ns foo
 `
+
+	errNoContext = fmt.Errorf("no context is currently set, use %q to select a new one", "kubectl config use-context <context>")
 )
 
 type NamespaceOptions struct {
 	configFlags *genericclioptions.ConfigFlags
 
-	rawConfig      api.Config
-	listNamespaces bool
-	args           []string
+	newClusterValue string
+	newContextName  string
+	nsValue         string
+	rawConfig       api.Config
+	listNamespaces  bool
+	args            []string
 
 	genericclioptions.IOStreams
 }
@@ -49,10 +70,10 @@ func NewCmdNamespace(streams genericclioptions.IOStreams) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:          "ns [new-namespace] [flags]",
 		Short:        "View or set the current namespace",
-		Example:      namespace_example,
+		Example:      fmt.Sprintf(namespace_example, "kubectl"),
 		SilenceUsage: true,
 		RunE: func(c *cobra.Command, args []string) error {
-			if err := o.Complete(args); err != nil {
+			if err := o.Complete(c, args); err != nil {
 				return err
 			}
 			if err := o.Validate(); err != nil {
@@ -72,9 +93,24 @@ func NewCmdNamespace(streams genericclioptions.IOStreams) *cobra.Command {
 	return cmd
 }
 
-func (o *NamespaceOptions) Complete(args []string) error {
+func (o *NamespaceOptions) Complete(cmd *cobra.Command, args []string) error {
 	var err error
 	o.rawConfig, err = o.configFlags.ToRawKubeConfigLoader().RawConfig()
+	if err != nil {
+		return err
+	}
+
+	o.nsValue, err = cmd.Flags().GetString("namespace")
+	if err != nil {
+		return err
+	}
+
+	o.newContextName, err = cmd.Flags().GetString("context")
+	if err != nil {
+		return err
+	}
+
+	o.newClusterValue, err = cmd.Flags().GetString("cluster")
 	if err != nil {
 		return err
 	}
@@ -85,18 +121,27 @@ func (o *NamespaceOptions) Complete(args []string) error {
 
 func (o *NamespaceOptions) Validate() error {
 	if len(o.rawConfig.CurrentContext) == 0 {
-		return fmt.Errorf("no context is currently set in your configuration")
+		return errNoContext
 	}
 	if len(o.args) > 1 {
 		return fmt.Errorf("either one or no arguments are allowed")
+	}
+
+	if len(o.args) > 0 && len(o.nsValue) > 0 {
+		return fmt.Errorf("cannot specify both a --namespace value and a new namespace argument")
 	}
 
 	return nil
 }
 
 func (o *NamespaceOptions) Run() error {
+	newNamespace := o.nsValue
 	if len(o.args) > 0 && len(o.args[0]) > 0 {
-		return o.setNamespace(o.args[0])
+		newNamespace = o.args[0]
+	}
+
+	if len(newNamespace) > 0 {
+		return o.setNamespace(newNamespace)
 	}
 
 	namespaces := map[string]bool{}
@@ -134,6 +179,32 @@ func (o *NamespaceOptions) Run() error {
 	return nil
 }
 
+// isUsingRequestedNamespace determines if a user's current context is already
+// suitable for providing the user-specified namespace. A context is only
+// "suitable" if it follows the rules detailed in the "setNamespace" method doc.
+func (o *NamespaceOptions) isUsingRequestedNamespace(newNamespace string) bool {
+	existingCtx, ok := o.rawConfig.Contexts[o.rawConfig.CurrentContext]
+	if !ok {
+		return false
+	}
+
+	ret := existingCtx.Namespace == newNamespace
+	if len(o.newContextName) > 0 {
+		ret = ret && o.rawConfig.CurrentContext == o.newContextName
+	}
+	if len(o.newClusterValue) > 0 {
+		ret = ret && existingCtx.Cluster == o.newClusterValue
+	}
+
+	return ret
+}
+
+// setNamespace receives a new namespace and finds an existing, qualifying KUBECONFIG
+// context containing the provided namespace, or creates a new qualifying context containing it.
+// a context is "qualifying" if:
+//   1. it contains the user-specified cluster or the same cluster as the current context
+//   2. it contains the user-specified auth info or the same auth info as the current context
+//   3. it contains the user-specified namespace
 func (o *NamespaceOptions) setNamespace(newNamespace string) error {
 	if len(newNamespace) == 0 {
 		return fmt.Errorf("a non-empty namespace must be provided")
@@ -141,38 +212,54 @@ func (o *NamespaceOptions) setNamespace(newNamespace string) error {
 
 	existingCtx, ok := o.rawConfig.Contexts[o.rawConfig.CurrentContext]
 	if !ok {
-		return fmt.Errorf("unable to gather information about the current context")
+		return errNoContext
 	}
 
-	if existingCtx.Namespace == newNamespace {
+	if o.isUsingRequestedNamespace(newNamespace) {
 		fmt.Fprintf(o.Out, "already using namespace %q\n", newNamespace)
 		return nil
 	}
 
-	// determine if a context exists for the new namespace
-	existingCtxName := ""
-	for name, c := range o.rawConfig.Contexts {
-		if c.Namespace != newNamespace || c.Cluster != existingCtx.Cluster || c.AuthInfo != existingCtx.AuthInfo {
-			continue
-		}
-
-		existingCtxName = name
-		break
+	existingClusterName := o.newClusterValue
+	if len(existingClusterName) == 0 {
+		existingClusterName = existingCtx.Cluster
 	}
 
+	existingCtxName := ""
+
+	// determine if a suitable context exists, which contains the new namespace.
+	// we only do this if a context name was not explicitly given by the user.
+	if len(o.newContextName) == 0 {
+		for name, c := range o.rawConfig.Contexts {
+			if c.Namespace != newNamespace || c.Cluster != existingClusterName || c.AuthInfo != existingCtx.AuthInfo {
+				continue
+			}
+
+			existingCtxName = name
+			break
+		}
+	}
+
+	// no existing context was found to be suitable, create new ctx containing
+	// existing context's auth and cluster info, and set the new namespace
 	if len(existingCtxName) == 0 {
 		newCtx := api.NewContext()
 		newCtx.AuthInfo = existingCtx.AuthInfo
-		newCtx.Cluster = existingCtx.Cluster
+		newCtx.Cluster = existingClusterName
 		newCtx.Namespace = newNamespace
 
-		newCtxName := newNamespace
-		if len(existingCtx.Cluster) > 0 {
-			newCtxName = fmt.Sprintf("%s/%s", newCtxName, existingCtx.Cluster)
-		}
-		if len(existingCtx.AuthInfo) > 0 {
-			cleanAuthInfo := strings.Split(existingCtx.AuthInfo, "/")[0]
-			newCtxName = fmt.Sprintf("%s/%s", newCtxName, cleanAuthInfo)
+		// we only generate a new name for our context
+		// if a user did not explicitly provide one
+		newCtxName := o.newContextName
+		if len(newCtxName) == 0 {
+			newCtxName = newNamespace
+			if len(existingClusterName) > 0 {
+				newCtxName = fmt.Sprintf("%s/%s", newCtxName, existingClusterName)
+			}
+			if len(existingCtx.AuthInfo) > 0 {
+				cleanAuthInfo := strings.Split(existingCtx.AuthInfo, "/")[0]
+				newCtxName = fmt.Sprintf("%s/%s", newCtxName, cleanAuthInfo)
+			}
 		}
 
 		o.rawConfig.Contexts[newCtxName] = newCtx
