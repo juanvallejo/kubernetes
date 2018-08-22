@@ -6,7 +6,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/tools/clientcmd/api"
 
@@ -29,7 +28,6 @@ var (
 type NamespaceOptions struct {
 	configFlags *genericclioptions.ConfigFlags
 
-	coreClient     corev1client.CoreV1Interface
 	rawConfig      api.Config
 	listNamespaces bool
 	args           []string
@@ -82,11 +80,6 @@ func (o *NamespaceOptions) Complete(args []string) error {
 	}
 
 	restConfig, err := o.configFlags.ToRESTConfig()
-	if err != nil {
-		return err
-	}
-
-	o.coreClient, err = corev1client.NewForConfig(restConfig)
 	if err != nil {
 		return err
 	}
