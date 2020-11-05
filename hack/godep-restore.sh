@@ -18,12 +18,12 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
-KUBE_ROOT=$(dirname "${BASH_SOURCE}")/..
+KUBE_ROOT=$(dirname "${BASH_SOURCE[0]}")/..
 source "${KUBE_ROOT}/hack/lib/init.sh"
 
 kube::log::status "Restoring kubernetes godeps"
 
-if kube::util::godep_restored >/dev/null 2>&1; then
+if kube::util::godep_restored 2>&1; then
     kube::log::status "Dependencies appear to be current - skipping download"
     exit 0
 fi

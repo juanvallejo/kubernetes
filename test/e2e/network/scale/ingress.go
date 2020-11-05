@@ -22,6 +22,7 @@ import (
 	"sync"
 	"time"
 
+	apps "k8s.io/api/apps/v1"
 	"k8s.io/api/core/v1"
 	extensions "k8s.io/api/extensions/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -61,8 +62,8 @@ var (
 // IngressScaleFramework defines the framework for ingress scale testing.
 type IngressScaleFramework struct {
 	Clientset     clientset.Interface
-	Jig           *ingress.IngressTestJig
-	GCEController *gce.GCEIngressController
+	Jig           *ingress.TestJig
+	GCEController *gce.IngressController
 	CloudConfig   framework.CloudConfig
 	Logger        ingress.TestLogger
 
@@ -71,7 +72,7 @@ type IngressScaleFramework struct {
 	NumIngressesTest []int
 	OutputFile       string
 
-	ScaleTestDeploy *extensions.Deployment
+	ScaleTestDeploy *apps.Deployment
 	ScaleTestSvcs   []*v1.Service
 	ScaleTestIngs   []*extensions.Ingress
 
@@ -111,7 +112,7 @@ func (f *IngressScaleFramework) PrepareScaleTest() error {
 	f.Jig = ingress.NewIngressTestJig(f.Clientset)
 	f.Jig.Logger = f.Logger
 	f.Jig.PollInterval = scaleTestPollInterval
-	f.GCEController = &gce.GCEIngressController{
+	f.GCEController = &gce.IngressController{
 		Client: f.Clientset,
 		Cloud:  f.CloudConfig,
 	}
@@ -147,13 +148,13 @@ func (f *IngressScaleFramework) CleanupScaleTest() []error {
 	}
 	if f.ScaleTestDeploy != nil {
 		f.Logger.Infof("Cleaning up deployment %s...", f.ScaleTestDeploy.Name)
-		if err := f.Clientset.ExtensionsV1beta1().Deployments(f.ScaleTestDeploy.Namespace).Delete(f.ScaleTestDeploy.Name, nil); err != nil {
+		if err := f.Clientset.AppsV1().Deployments(f.ScaleTestDeploy.Namespace).Delete(f.ScaleTestDeploy.Name, nil); err != nil {
 			errs = append(errs, fmt.Errorf("Error while delting deployment %s/%s: %v", f.ScaleTestDeploy.Namespace, f.ScaleTestDeploy.Name, err))
 		}
 	}
 
 	f.Logger.Infof("Cleaning up cloud resources...")
-	if err := f.GCEController.CleanupGCEIngressControllerWithTimeout(ingressesCleanupTimeout); err != nil {
+	if err := f.GCEController.CleanupIngressControllerWithTimeout(ingressesCleanupTimeout); err != nil {
 		errs = append(errs, err)
 	}
 
@@ -166,7 +167,7 @@ func (f *IngressScaleFramework) RunScaleTest() []error {
 
 	testDeploy := generateScaleTestBackendDeploymentSpec(scaleTestNumBackends)
 	f.Logger.Infof("Creating deployment %s...", testDeploy.Name)
-	testDeploy, err := f.Jig.Client.ExtensionsV1beta1().Deployments(f.Namespace).Create(testDeploy)
+	testDeploy, err := f.Jig.Client.AppsV1().Deployments(f.Namespace).Create(testDeploy)
 	if err != nil {
 		errs = append(errs, fmt.Errorf("Failed to create deployment %s: %v", testDeploy.Name, err))
 		return errs
@@ -436,12 +437,12 @@ func generateScaleTestServiceSpec(suffix string) *v1.Service {
 	}
 }
 
-func generateScaleTestBackendDeploymentSpec(numReplicas int32) *extensions.Deployment {
-	return &extensions.Deployment{
+func generateScaleTestBackendDeploymentSpec(numReplicas int32) *apps.Deployment {
+	return &apps.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: scaleTestBackendName,
 		},
-		Spec: extensions.DeploymentSpec{
+		Spec: apps.DeploymentSpec{
 			Replicas: &numReplicas,
 			Selector: &metav1.LabelSelector{MatchLabels: scaleTestLabels},
 			Template: v1.PodTemplateSpec{

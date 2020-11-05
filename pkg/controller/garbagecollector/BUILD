@@ -22,8 +22,6 @@ go_library(
     deps = [
         "//pkg/controller:go_default_library",
         "//pkg/controller/garbagecollector/metaonly:go_default_library",
-        "//pkg/util/reflector/prometheus:go_default_library",
-        "//pkg/util/workqueue/prometheus:go_default_library",
         "//staging/src/k8s.io/apimachinery/pkg/api/errors:go_default_library",
         "//staging/src/k8s.io/apimachinery/pkg/api/meta:go_default_library",
         "//staging/src/k8s.io/apimachinery/pkg/apis/meta/v1:go_default_library",
@@ -96,6 +94,7 @@ filegroup(
     name = "all-srcs",
     srcs = [
         ":package-srcs",
+        "//pkg/controller/garbagecollector/config:all-srcs",
         "//pkg/controller/garbagecollector/metaonly:all-srcs",
     ],
     tags = ["automanaged"],

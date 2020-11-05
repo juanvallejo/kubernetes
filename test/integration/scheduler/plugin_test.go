@@ -57,7 +57,7 @@ func (tp *TesterPlugin) Reserve(ps plugins.PluginSet, pod *v1.Pod, nodeName stri
 
 // Prebind is a test function that returns (true, nil) or errors for testing.
 func (tp *TesterPlugin) Prebind(ps plugins.PluginSet, pod *v1.Pod, nodeName string) (bool, error) {
-	var err error = nil
+	var err error
 	tp.numPrebindCalled++
 	if tp.failPrebind {
 		err = fmt.Errorf("injecting failure for pod %v", pod.Name)
@@ -106,7 +106,7 @@ func TestReservePlugin(t *testing.T) {
 	// Create the master and the scheduler with the test plugin set.
 	context := initTestSchedulerWithOptions(t,
 		initTestMaster(t, "reserve-plugin", nil),
-		false, nil, testPluginSet, false, true, time.Second)
+		false, nil, testPluginSet, false, time.Second)
 	defer cleanupTest(t, context)
 
 	cs := context.clientSet
@@ -157,7 +157,7 @@ func TestPrebindPlugin(t *testing.T) {
 	// Create the master and the scheduler with the test plugin set.
 	context := initTestSchedulerWithOptions(t,
 		initTestMaster(t, "prebind-plugin", nil),
-		false, nil, testPluginSet, false, true, time.Second)
+		false, nil, testPluginSet, false, time.Second)
 	defer cleanupTest(t, context)
 
 	cs := context.clientSet
@@ -239,7 +239,7 @@ func TestContextCleanup(t *testing.T) {
 	// Create the master and the scheduler with the test plugin set.
 	context := initTestSchedulerWithOptions(t,
 		initTestMaster(t, "plugin-context-cleanup", nil),
-		false, nil, testPluginSet, false, true, time.Second)
+		false, nil, testPluginSet, false, time.Second)
 	defer cleanupTest(t, context)
 
 	cs := context.clientSet

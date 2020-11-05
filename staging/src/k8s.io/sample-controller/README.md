@@ -19,7 +19,7 @@ The `update-codegen` script will automatically generate the following files &
 directories:
 
 * `pkg/apis/samplecontroller/v1alpha1/zz_generated.deepcopy.go`
-* `pkg/client/`
+* `pkg/generated/`
 
 Changes should not be made to these files manually, and when creating your own
 controller based off of this implementation you should not copy these files and
@@ -42,6 +42,8 @@ This is an example of how to build a kube-like controller with a single type.
 
 ```sh
 # assumes you have a working kubeconfig, not required if operating in-cluster
+$ go get k8s.io/sample-controller
+$ cd $GOPATH/src/k8s.io/sample-controller
 $ go build -o sample-controller .
 $ ./sample-controller -kubeconfig=$HOME/.kube/config
 

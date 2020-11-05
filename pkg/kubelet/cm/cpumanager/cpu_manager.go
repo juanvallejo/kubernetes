@@ -27,7 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/klog"
 
-	runtimeapi "k8s.io/kubernetes/pkg/kubelet/apis/cri/runtime/v1alpha2"
+	runtimeapi "k8s.io/cri-api/pkg/apis/runtime/v1alpha2"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpumanager/state"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpumanager/topology"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
@@ -44,7 +44,7 @@ type runtimeService interface {
 
 type policyName string
 
-// cpuManagerStateFileName is the name file name where cpu manager stores it's state
+// cpuManagerStateFileName is the file name where cpu manager stores its state
 const cpuManagerStateFileName = "cpu_manager_state"
 
 // Manager interface provides methods for Kubelet to manage pod cpus.
@@ -220,6 +220,8 @@ func (m *manager) reconcileState() (success []reconciledContainer, failure []rec
 	success = []reconciledContainer{}
 	failure = []reconciledContainer{}
 
+	activeContainers := make(map[string]*v1.Pod)
+
 	for _, pod := range m.activePods() {
 		allContainers := pod.Spec.InitContainers
 		allContainers = append(allContainers, pod.Spec.Containers...)
@@ -258,6 +260,8 @@ func (m *manager) reconcileState() (success []reconciledContainer, failure []rec
 				}
 			}
 
+			activeContainers[containerID] = pod
+
 			cset := m.state.GetCPUSetOrDefault(containerID)
 			if cset.IsEmpty() {
 				// NOTE: This should not happen outside of tests.
@@ -274,6 +278,16 @@ func (m *manager) reconcileState() (success []reconciledContainer, failure []rec
 				continue
 			}
 			success = append(success, reconciledContainer{pod.Name, container.Name, containerID})
+		}
+	}
+
+	for containerID := range m.state.GetCPUAssignments() {
+		if pod, ok := activeContainers[containerID]; !ok {
+			err := m.RemoveContainer(containerID)
+			if err != nil {
+				klog.Errorf("[cpumanager] reconcileState: failed to remove container (pod: %s, container id: %s, error: %v)", pod.Name, containerID, err)
+				failure = append(failure, reconciledContainer{pod.Name, "", containerID})
+			}
 		}
 	}
 	return success, failure
